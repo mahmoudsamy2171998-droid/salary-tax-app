@@ -17,3 +17,19 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*",
+      "package.json",
+      "main.js"
+    ],
+    "directories": {
+      "buildResources": "build"
+    }
+  },
+  "dependencies": {
+    "electron": "^26.6.10"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.13.3",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
+  }
+}
