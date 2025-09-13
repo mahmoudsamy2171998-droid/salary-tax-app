@@ -1,0 +1,27 @@
+{
+  "name": "salary-tax-electron",
+  "version": "0.1.0",
+  "description": "Salary Tax App - Electron MVP (Arabic RTL)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.example.salarytax",
+    "productName": "SalaryTaxApp",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    }
+  },
+  "dependencies": {
+    "electron-store": "^8.0.1"
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-builder": "^24.6.0"
+  }
+}

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>برنامج حساب ضريبة الدخل — SalaryTaxApp</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 12px; direction: rtl; }
+    header { display:flex; justify-content:space-between; align-items:center; }
+    .container { display:flex; gap:20px; }
+    .panel { flex:1; border:1px solid #ddd; padding:10px; border-radius:6px; background:#fff; max-height:680px; overflow:auto; }
+    label{display:block; margin-top:8px;}
+    input, select, textarea { width:100%; padding:6px; }
+    table{width:100%; border-collapse:collapse;}
+    th,td{border:1px solid #eee; padding:6px; text-align:right;}
+    .btn{padding:8px 12px; margin:6px 0; cursor:pointer;}
+    .btn-primary{background:#007bff;color:white;border:none;}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>برنامج حساب ضريبة الدخل — نسخة سطح مكتب</h1>
+    <div>
+      <button id="saveBtn" class="btn">حفظ البيانات</button>
+      <button id="loadBtn" class="btn">تحميل البيانات</button>
+    </div>
+  </header>
+  <div class="container">
+    <div class="panel" style="flex:0.6;">
+      <h3>الموظفين</h3>
+      <div>
+        <label>إضافة موظف جديد</label>
+        <input id="empName" placeholder="الاسم" />
+        <input id="empCode" placeholder="كود الموظف" />
+        <input id="empNat" placeholder="الرقم القومي" />
+        <input id="empBasic" placeholder="الراتب الأساسي" type="number" />
+        <label>البدلات (JSON) — مثال: [{"name":"بدل سكن","amount":2000,"taxable":true}]</label>
+        <textarea id="empAllow" rows="3"></textarea>
+        <button id="addEmp" class="btn btn-primary">أضف موظف</button>
+      </div>
+      <hr/>
+      <div>
+        <label>استيراد CSV (emp_code,name,national_id,basic_salary,allowances_json)</label>
+        <input id="csvFile" type="file" accept=".csv" />
+        <button id="importCsv" class="btn">استيراد</button>
+      </div>
+      <hr/>
+      <h4>قائمة الموظفين</h4>
+      <table id="empsTable"><thead><tr><th>كود</th><th>الاسم</th><th>الأساسي</th><th>تعديل</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel" style="flex:0.4;">
+      <h3>شرائح الضريبة</h3>
+      <div>
+        <label>اختر سنة</label>
+        <select id="taxYear"></select>
+        <label>إضافة شريحة جديدة (من - إلى - نسبة)</label>
+        <input id="bandFrom" placeholder="من" type="number" />
+        <input id="bandTo" placeholder="إلى (اترك فارغ لآخر الشريحة)" />
+        <input id="bandRate" placeholder="النسبة (%)" type="number" />
+        <label>مقدار الإعفاء الشخصي (قيمة ثابتة للسنة)</label>
+        <input id="personalAllowance" placeholder="مقدار الإعفاء" type="number" />
+        <button id="addBand" class="btn btn-primary">أضف شريحة</button>
+      </div>
+      <hr/>
+      <h4>شرائح السنة المحددة</h4>
+      <table id="bandsTable"><thead><tr><th>من</th><th>إلى</th><th>نسبة</th><th>حذف</th></tr></thead><tbody></tbody></table>
+      <hr/>
+      <h3>توليد الرواتب</h3>
+      <label>اختر سنة</label>
+      <select id="payYear"></select>
+      <label>اختر شهر</label>
+      <select id="payMonth"></select>
+      <button id="genPayroll" class="btn btn-primary">توليد لّكل الموظفين</button>
+      <button id="exportCsvBtn" class="btn">تصدير CSV للرواتب</button>
+      <button id="exportAllPdfBtn" class="btn">تصدير إيصالات PDF جماعية</button>
+      <div id="payResult"></div>
+    </div>
+  </div>
+
+  <script>
+    // Simple in-page state
+    let state = { employees: [], taxBands: [] };
+
+    // helpers
+    function formatNumber(n){ return Number(n).toLocaleString('ar-EG'); }
+
+    // load/save via electronAPI if available
+    async function loadData(){
+      if(window.electronAPI){
+        state = await window.electronAPI.loadData();
+      } else {
+        const local = localStorage.getItem('app_data');
+        state = local ? JSON.parse(local) : { employees: [], taxBands: [] };
+      }
+      renderAll();
+    }
+    async function saveData(){
+      if(window.electronAPI){
+        await window.electronAPI.saveData(state);
+        alert('تم الحفظ.');
+      } else {
+        localStorage.setItem('app_data', JSON.stringify(state));
+        alert('تم الحفظ محليًا.');
+      }
+    }
+
+    // init selectors
+    function fillYearSelectors(){
+      const years = [];
+      const now = new Date().getFullYear();
+      for(let y = 2010; y <= now+2; y++) years.push(y);
+      const taxYear = document.getElementById('taxYear');
+      const payYear = document.getElementById('payYear');
+      taxYear.innerHTML = years.map(y=>'<option value="'+y+'">'+y+'</option>').join('');
+      payYear.innerHTML = taxYear.innerHTML;
+      const payMonth = document.getElementById('payMonth');
+      payMonth.innerHTML = Array.from({length:12}, (_,i)=>'<option value="'+(i+1)+'">'+(i+1)+'</option>').join('');
+    }
+
+    // employees
+    document.getElementById('addEmp').addEventListener('click', ()=>{
+      const name = document.getElementById('empName').value.trim();
+      const code = document.getElementById('empCode').value.trim();
+      const nat = document.getElementById('empNat').value.trim();
+      const basic = Number(document.getElementById('empBasic').value||0);
+      let allow = [];
+      try{ allow = JSON.parse(document.getElementById('empAllow').value || '[]'); }catch(e){ alert('صيغة البدلات غير صحيحة'); return; }
+      if(!name || !code){ alert('الاسم والكود مطلوب'); return; }
+      state.employees.push({ emp_code: code, name, national_id: nat, basic_salary: basic, allowances: allow });
+      renderAll();
+    });
+
+    document.getElementById('importCsv').addEventListener('click', ()=>{
+      const f = document.getElementById('csvFile').files[0];
+      if(!f){ alert('اختر ملف CSV'); return; }
+      const reader = new FileReader();
+      reader.onload = e => {
+        const txt = e.target.result;
+        const lines = txt.split(/\r?\n/).filter(l=>l.trim());
+        for(const ln of lines.slice(1)){ // skip header if present
+          const parts = ln.split(',');
+          if(parts.length < 4) continue;
+          const emp_code = parts[0].trim();
+          const name = parts[1].trim();
+          const national_id = parts[2].trim();
+          const basic_salary = Number(parts[3] || 0);
+          let allowances = [];
+          if(parts[4]){
+            try{ allowances = JSON.parse(parts.slice(4).join(',')); }catch(e){ allowances = []; }
+          }
+          state.employees.push({ emp_code, name, national_id, basic_salary, allowances });
+        }
+        renderAll();
+        alert('تم الاستيراد');
+      };
+      reader.readAsText(f,'utf-8');
+    });
+
+    function renderEmployees(){
+      const tbody = document.querySelector('#empsTable tbody');
+      tbody.innerHTML = state.employees.map((emp,i)=>'<tr><td>'+emp.emp_code+'</td><td>'+emp.name+'</td><td>'+formatNumber(emp.basic_salary)+'</td><td><button onclick="editEmp('+i+')">تعديل</button></td></tr>').join('');
+    }
+    function editEmp(i){
+      const emp = state.employees[i];
+      const newName = prompt('الاسم', emp.name);
+      if(newName!==null) emp.name = newName;
+      renderAll();
+    }
+
+    // tax bands
+    document.getElementById('addBand').addEventListener('click', ()=>{
+      const year = Number(document.getElementById('taxYear').value);
+      const from = Number(document.getElementById('bandFrom').value || 0);
+      const toVal = document.getElementById('bandTo').value.trim();
+      const to = toVal === '' ? null : Number(toVal);
+      const rate = Number(document.getElementById('bandRate').value || 0);
+      const personal = Number(document.getElementById('personalAllowance').value || 0);
+      if(!state.taxBands) state.taxBands = [];
+      // add personal allowance as special item
+      if(personal > 0){
+        // remove previous personal for year
+        state.taxBands = state.taxBands.filter(b=> !(b.type === 'personal_allowance' && b.year === year));
+        state.taxBands.push({ year, type: 'personal_allowance', amount: personal });
+      }
+      state.taxBands.push({ year, from, to, rate_percent: rate, type: 'bracket' });
+      renderAll();
+    });
+
+    function renderBands(){
+      const year = Number(document.getElementById('taxYear').value || new Date().getFullYear());
+      const bands = (state.taxBands||[]).filter(b=>b.year===year && b.type==='bracket').sort((a,b)=>a.from-b.from);
+      const tbody = document.querySelector('#bandsTable tbody');
+      tbody.innerHTML = bands.map((b,i)=>'<tr><td>'+b.from+'</td><td>'+(b.to===null?'آخر الشريحة':b.to)+'</td><td>'+b.rate_percent+'%</td><td><button onclick="deleteBand('+year+','+i+')">حذف</button></td></tr>').join('');
+    }
+    function deleteBand(year, indexInFiltered){
+      const bands = (state.taxBands||[]).filter(b=>b.year===year && b.type==='bracket').sort((a,b)=>a.from-b.from);
+      const target = bands[indexInFiltered];
+      // remove first matching (by from,to,rate)
+      const idx = state.taxBands.findIndex(b=> b.type==='bracket' && b.year===year && b.from===target.from && b.to===target.to && b.rate_percent===target.rate_percent);
+      if(idx>=0) state.taxBands.splice(idx,1);
+      renderAll();
+    }
+
+    // payroll generation
+    function calcTaxForEmployee(emp, year){
+      const basic = Number(emp.basic_salary || 0);
+      const allowances = Array.isArray(emp.allowances) ? emp.allowances : [];
+      const totalAllowances = allowances.reduce((s,a)=> s + (a.taxable ? Number(a.amount||0) : 0), 0);
+      const gross = basic + totalAllowances;
+      const bands = (state.taxBands||[]).filter(b=>b.year===year);
+      let personal = 0;
+      bands.forEach(b=>{ if(b.type==='personal_allowance') personal = Number(b.amount||0); });
+      const brackets = bands.filter(b=>b.type==='bracket').sort((a,b)=>a.from-b.from);
+      let taxable = Math.max(0, gross - personal);
+      let remaining = taxable;
+      let tax = 0;
+      const breakdown = [];
+      for(const b of brackets){
+        if(remaining <= 0) break;
+        const from = Number(b.from||0);
+        const to = (b.to===null || b.to===undefined) ? Infinity : Number(b.to);
+        let bandCap = Math.max(0, (to===Infinity?remaining:Math.min(remaining, to - from + 1)));
+        // compute taxable in band by clamping taxable - from (simple approach)
+        const taxableInBand = Math.max(0, Math.min(taxable - from, (to===Infinity?taxable:to - from + 1)));
+        if(taxableInBand > 0){
+          const partTax = taxableInBand * (Number(b.rate_percent||0)/100);
+          tax += partTax;
+          breakdown.push({ band: b, taxable: taxableInBand, tax: partTax });
+          remaining -= taxableInBand;
+        }
+      }
+      return { gross, personal, taxable, tax_due: Math.round(tax*100)/100, breakdown };
+    }
+
+    document.getElementById('genPayroll').addEventListener('click', ()=>{
+      const year = Number(document.getElementById('payYear').value);
+      const month = Number(document.getElementById('payMonth').value);
+      const results = state.employees.map(emp=>{
+        const r = calcTaxForEmployee(emp, year);
+        return { emp_code: emp.emp_code, name: emp.name, year, month, gross: r.gross, taxable: r.taxable, tax_due: r.tax_due };
+      });
+      // show simple table
+      const el = document.getElementById('payResult');
+      el.innerHTML = '<h4>نتيجة التوليد</h4><table><thead><tr><th>كود</th><th>الاسم</th><th>الإجمالي</th><th>الخاضع</th><th>الضريبة</th></tr></thead><tbody>'+results.map(r=>'<tr><td>'+r.emp_code+'</td><td>'+r.name+'</td><td>'+formatNumber(r.gross)+'</td><td>'+formatNumber(r.taxable)+'</td><td>'+formatNumber(r.tax_due)+'</td></tr>').join('')+'</tbody></table>';
+      // attach to state lastPayrolls
+      state.lastPayrolls = results;
+    });
+
+    document.getElementById('exportCsvBtn').addEventListener('click', async ()=>{
+      if(!state.lastPayrolls || state.lastPayrolls.length===0){ alert('لا توجد بيانات مولّدة'); return; }
+      const rows = [['emp_code','name','year','month','gross','taxable','tax_due']].concat(state.lastPayrolls.map(r=>[r.emp_code,r.name,r.year,r.month,r.gross,r.taxable,r.tax_due]));
+      const csv = rows.map(r=>r.map(c=>String(c).replace(/"/g,'""')).map(c=> '"'+c+'"').join(',')).join('\n');
+      if(window.electronAPI){
+        const res = await window.electronAPI.chooseSavePath('payrolls.csv');
+        if(res.canceled) return;
+        const path = res.filePath;
+        // save via fetch to file:// not available; use a blob approach via renderer
+        const a = document.createElement('a');
+        const blob = new Blob([csv], {type:'text/csv'});
+        const url = URL.createObjectURL(blob);
+        a.href = url; a.download = 'payrolls.csv'; a.click(); URL.revokeObjectURL(url);
+        alert('CSV جاهز للتحميل (حفظ تلقائي قد يظهر من المتصفح الداخلي)');
+      } else {
+        const a = document.createElement('a');
+        const blob = new Blob([csv], {type:'text/csv'});
+        const url = URL.createObjectURL(blob);
+        a.href = url; a.download = 'payrolls.csv'; a.click(); URL.revokeObjectURL(url);
+      }
+    });
+
+    document.getElementById('exportAllPdfBtn').addEventListener('click', async ()=>{
+      if(!state.lastPayrolls || state.lastPayrolls.length===0){ alert('لا توجد بيانات مولّدة'); return; }
+      // for each payroll create HTML receipt and ask main to printToPDF
+      for(const p of state.lastPayrolls){
+        const html = `<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>إيصال</title></head><body style="font-family:Arial; padding:20px; direction:rtl;">`+
+          `<h2>إيصال احتساب ضريبة — ${p.name}</h2>`+
+          `<p>كود: ${p.emp_code}</p>`+
+          `<p>السنة: ${p.year} - الشهر: ${p.month}</p>`+
+          `<p>الإجمالي الخاضع: ${p.gross}</p>`+
+          `<p>الضريبة المستحقة: ${p.tax_due}</p>`+
+          `</body></html>`;
+        if(window.electronAPI){
+          const res = await window.electronAPI.printPDF(html, p.emp_code + '_receipt.pdf');
+          if(res.canceled) { console.log('PDF canceled or error', res); }
+          else { alert('حفظ PDF: '+res.filePath); }
+        } else {
+          // open in new tab and let user print
+          const w = window.open(); w.document.write(html); w.document.close();
+        }
+      }
+    });
+
+    // rendering
+    function renderAll(){ renderEmployees(); renderBands(); }
+    fillYearSelectors();
+    loadData();
+
+    document.getElementById('saveBtn').addEventListener('click', saveData);
+    document.getElementById('loadBtn').addEventListener('click', loadData);
+  </script>
+</body>
+</html>
