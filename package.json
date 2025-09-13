@@ -1,20 +1,19 @@
 {
   "name": "salary-tax-electron",
   "version": "1.0.0",
-  "description": "Salary Tax Calculator Desktop App",
+  "description": "برنامج حساب ضريبة الدخل (نسخة سطح المكتب)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
-  },
-  "author": "Your Name",
-  "license": "MIT",
-  "devDependencies": {
-    "electron": "^26.6.10",
-    "electron-builder": "^24.13.3"
+    "dev": "concurrently \"npm run react-start\" \"npm run electron-start\"",
+    "react-start": "cd app && npm start",
+    "electron-start": "wait-on tcp:3000 && electron .",
+    "build-react": "cd app && npm run build",
+    "dist": "npm run build-react && electron-builder --win"
   },
   "build": {
     "appId": "com.salary.tax",
-    "productName": "Salary Tax App"
-  }
-}
+    "productName": "Salary Tax",
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
