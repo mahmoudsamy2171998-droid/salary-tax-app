@@ -1,35 +1,35 @@
 {
   "name": "salary-tax-electron",
   "version": "1.0.0",
-  "description": "برنامج حساب ضريبة الدخل (نسخة سطح المكتب)",
+  "description": "Salary Tax Calculator Desktop App",
   "main": "main.js",
+  "author": "Your Name",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "concurrently \"npm run react-start\" \"npm run electron-start\"",
-    "react-start": "cd app && npm start",
-    "electron-start": "wait-on tcp:3000 && electron .",
-    "build-react": "cd app && npm run build",
-    "dist": "npm run build-react && electron-builder --win"
+    "build-react": "npm run build",
+    "dist": "electron-builder --win"
   },
   "build": {
-    "appId": "com.salary.tax",
-    "productName": "Salary Tax",
+    "appId": "com.salarytax.app",
+    "productName": "Salary Tax App",
     "files": [
       "dist/**/*",
-      "node_modules/**/*",
-      "package.json",
-      "main.js"
+      "main.js",
+      "package.json"
     ],
     "directories": {
-      "buildResources": "build"
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
     }
   },
-  "dependencies": {
-    "electron": "^26.6.10"
-  },
   "devDependencies": {
-    "electron-builder": "^24.13.3",
-    "concurrently": "^8.2.2",
-    "wait-on": "^7.2.0"
-  }
-}
+    "electron": "^26.6.10",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "re
